@@ -1,0 +1,361 @@
+{
+  "tasks": 50,
+  "task_success_rate": 1.0,
+  "tool_call_accuracy": 1.0,
+  "avg_calls_per_task": 3.8,
+  "malformed_rate": 0.0,
+  "per_task": [
+    {
+      "id": "heldout-0000",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0001",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0002",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0003",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0004",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0005",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0006",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0007",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0008",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0009",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0010",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0011",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0012",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0013",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0014",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0015",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0016",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0017",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0018",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0019",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0020",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0021",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0022",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0023",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0024",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0025",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0026",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0027",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0028",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0029",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0030",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0031",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0032",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0033",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0034",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0035",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0036",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0037",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0038",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0039",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0040",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0041",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0042",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0043",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0044",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0045",
+      "success": true,
+      "calls": 3,
+      "matched": 3,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0046",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0047",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0048",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    },
+    {
+      "id": "heldout-0049",
+      "success": true,
+      "calls": 4,
+      "matched": 4,
+      "malformed": 0
+    }
+  ],
+  "model": "mock-tuned",
+  "tasks_file": "data/heldout.jsonl"
+}

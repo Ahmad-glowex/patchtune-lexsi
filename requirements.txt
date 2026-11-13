@@ -1,0 +1,6 @@
+# Local pipeline: stdlib only (no third-party packages required).
+# GPU training / Colab only:
+#   agenttune          # PATH A (Lexsi toolkit, LSAL)
+#   auditkit           # trace scoring (Lexsi toolkit, LSAL)
+#   trl                # PATH B fallback
+#   transformers datasets peft accelerate
