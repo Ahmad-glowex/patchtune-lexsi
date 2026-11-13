@@ -87,7 +87,7 @@ def train_trl(args) -> str:
     config = GRPOConfig(
         output_dir=args.out,
         max_steps=args.steps,
-        per_device_train_batch_size=2,
+        per_device_train_batch_size=4,
         num_generations=4,
         learning_rate=1e-5,
         logging_steps=1,
