@@ -50,21 +50,57 @@ def load_prompts(data_dir: str) -> list[dict]:
 # PATH A — AgentTune
 # ---------------------------------------------------------------------------
 
+def _tool_ack(name: str, arguments: dict) -> str:
+    """Validate one tool call and acknowledge it.
+
+    Rollout-time execution against a live repo is deliberately out of
+    scope (see patchtune.reward.reward_func): GRPO's learning signal
+    comes from the reward function, which re-parses the emitted calls
+    and scores them against the task. These callables exist so the
+    trainer receives plain named functions — TRL's trainer glue indexes
+    tools by ``__name__`` and crashes on name strings.
+    """
+    from patchtune.tools import validate_call
+
+    ok, _msg = validate_call({"tool": name, "arguments": arguments})
+    return json.dumps({"tool": name, "accepted": ok})
+
+
+def read_file(path: str) -> str:
+    """Read a file from the project repository."""
+    return _tool_ack("read_file", {"path": path})
+
+
+def search_code(query: str) -> str:
+    """Search the project code for a text query."""
+    return _tool_ack("search_code", {"query": query})
+
+
+def run_tests() -> str:
+    """Run the project test suite."""
+    return _tool_ack("run_tests", {})
+
+
+def apply_patch(diff: str) -> str:
+    """Apply a unified-diff patch to the project."""
+    return _tool_ack("apply_patch", {"diff": diff})
+
+
 def train_agenttune(args) -> str:
     """Returns the output dir on success; raises on any failure so the
     caller can fall back to PATH B."""
     import agenttune  # noqa: F401  (ImportError -> caller falls back)
     from agenttune import create_agentic_trainer
+    from datasets import Dataset
 
     from patchtune.reward import reward_func
-    from patchtune.tools import TOOL_SPECS  # tool names for the trainer
 
     trainer = create_agentic_trainer(
         algorithm="grpo",
         model=args.model,
-        tools=sorted(TOOL_SPECS),          # read_file/search_code/run_tests/apply_patch
+        tools=[read_file, search_code, run_tests, apply_patch],
         reward_funcs=[reward_func],
-        train_dataset=load_prompts(args.data_dir),
+        train_dataset=Dataset.from_list(load_prompts(args.data_dir)),
         max_steps=args.steps,
         output_dir=args.out,
     )
@@ -79,27 +115,52 @@ def train_agenttune(args) -> str:
 
 def train_trl(args) -> str:
     from datasets import Dataset
+    from peft import LoraConfig
     from trl import GRPOConfig, GRPOTrainer
 
     from patchtune.reward import reward_func
 
     dataset = Dataset.from_list(load_prompts(args.data_dir))
+    # LoRA + bf16 + gradient checkpointing: full fine-tuning a 3.35B
+    # model does not fit a free T4 (15 GB) once AdamW states are counted;
+    # the first smoke attempt thrashed on CPU/disk offload. LoRA keeps
+    # the trainable state small and the base frozen in bf16.
     config = GRPOConfig(
         output_dir=args.out,
         max_steps=args.steps,
         per_device_train_batch_size=4,
         num_generations=4,
-        learning_rate=1e-5,
+        learning_rate=5e-5,  # LoRA-scale rate (full-FT would use ~1e-5)
         logging_steps=1,
         save_strategy="no",
         report_to=[],
+        bf16=True,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        max_prompt_length=1024,
+        max_completion_length=512,
+        model_init_kwargs={"torch_dtype": "bfloat16"},
+    )
+    peft_config = LoraConfig(
+        r=16,
+        lora_alpha=32,
+        lora_dropout=0.0,
+        task_type="CAUSAL_LM",
+        target_modules="all-linear",
     )
     trainer = GRPOTrainer(
         model=args.model,
         args=config,
         reward_funcs=[reward_func],
         train_dataset=dataset,
+        peft_config=peft_config,
     )
+    try:
+        # PEFT + gradient checkpointing: the checkpoint hook needs input
+        # grads enabled on the frozen base (documented PEFT caveat).
+        trainer.model.enable_input_require_grads()
+    except Exception:  # noqa: BLE001 - best effort; training still runs
+        pass
     trainer.train()
     trainer.save_model(args.out)
     return args.out
@@ -127,6 +188,17 @@ def main() -> None:
             if args.path == "agenttune":
                 raise
             print("Falling back to PATH B (TRL GRPO)...")
+            # PATH A may have loaded the model before failing; free what
+            # we can so PATH B does not start against a full GPU/RAM.
+            import gc
+
+            gc.collect()
+            try:
+                import torch
+
+                torch.cuda.empty_cache()
+            except Exception:  # noqa: BLE001
+                pass
     out = train_trl(args)
     print(f"PATH B (TRL) done -> {out}")
 
