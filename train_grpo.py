@@ -45,6 +45,43 @@ os.environ.setdefault("WANDB_MODE", "disabled")
 BASE_MODEL = "CohereLabs/tiny-aya-global"
 
 
+def _save_kwargs(args) -> dict:
+    """Checkpoint settings shared by both paths.
+
+    Training saves a checkpoint DURING the run (every --save-steps
+    steps), not only at the end, and — when --push-to names a Hub
+    repo — pushes each checkpoint there as it is written. On an
+    ephemeral-disk runner (HF Jobs) a job killed mid-run (timeout,
+    OOM, spot loss) therefore keeps every completed step's progress
+    on the Hub instead of losing the whole run.
+    """
+    kw = {"save_strategy": "steps", "save_steps": args.save_steps}
+    if args.push_to:
+        kw["push_to_hub"] = True
+        kw["hub_model_id"] = args.push_to
+    return kw
+
+
+def _resolve_resume(args) -> str | None:
+    """Download the --resume-from Hub repo and return the local path
+    of its newest checkpoint-* folder (full Trainer checkpoint,
+    optimizer state included), or None to start fresh."""
+    if not args.resume_from:
+        return None
+    from huggingface_hub import snapshot_download
+
+    local = snapshot_download(repo_id=args.resume_from, repo_type="model")
+    ckpts = sorted(
+        Path(local).glob("checkpoint-*"),
+        key=lambda p: int(p.name.rsplit("-", 1)[-1]),
+    )
+    if not ckpts:
+        print(f"RESUME: no checkpoint-* in {args.resume_from}; starting fresh")
+        return None
+    print(f"RESUME: continuing from {ckpts[-1].name} in {args.resume_from}")
+    return str(ckpts[-1])
+
+
 def load_prompts(data_dir: str) -> list[dict]:
     rows = []
     for line in Path(data_dir, "train.jsonl").read_text(encoding="utf-8").splitlines():
@@ -134,8 +171,18 @@ def train_agenttune(args) -> str:
         num_generations=4,
         max_completion_length=512,
         learning_rate=5e-5,
+        **_save_kwargs(args),
     )
-    trainer.train()
+    if args.resume_ckpt:
+        try:
+            trainer.train(resume_from_checkpoint=args.resume_ckpt)
+        except TypeError:
+            # agenttune's train() wrapper may not forward the kwarg;
+            # checkpoints still save+push, only the resume is skipped.
+            print("RESUME: PATH A train() rejected resume_from_checkpoint; starting fresh")
+            trainer.train()
+    else:
+        trainer.train()
     trainer.save_model(args.out)
     return args.out
 
@@ -170,8 +217,8 @@ def train_trl(args) -> str:
         num_generations=4,
         learning_rate=5e-5,  # LoRA-scale rate (full-FT would use ~1e-5)
         logging_steps=1,
-        save_strategy="no",
         report_to=[],
+        **_save_kwargs(args),
         bf16=True,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
@@ -212,7 +259,10 @@ def train_trl(args) -> str:
         trainer.model.enable_input_require_grads()
     except Exception:  # noqa: BLE001 - best effort; training still runs
         pass
-    trainer.train()
+    if args.resume_ckpt:
+        trainer.train(resume_from_checkpoint=args.resume_ckpt)
+    else:
+        trainer.train()
     trainer.save_model(args.out)
     return args.out
 
@@ -232,9 +282,26 @@ def main() -> None:
         "the trained adapter to, using the ambient HF_TOKEN. Needed on HF "
         "Jobs, where the local disk disappears when the job ends.",
     )
+    ap.add_argument(
+        "--save-steps",
+        type=int,
+        default=None,
+        help="Save (and, with --push-to, upload) a checkpoint every N "
+        "steps. Default: 1 for --smoke, 25 otherwise.",
+    )
+    ap.add_argument(
+        "--resume-from",
+        default=None,
+        help="HF model repo id holding checkpoint-* folders from an "
+        "earlier interrupted run; training continues from the newest "
+        "checkpoint instead of starting over.",
+    )
     args = ap.parse_args()
     if args.smoke:
         args.steps = 5
+    if args.save_steps is None:
+        args.save_steps = 1 if args.smoke else 25
+    args.resume_ckpt = _resolve_resume(args)
 
     out = None
     if args.path in ("auto", "agenttune"):
