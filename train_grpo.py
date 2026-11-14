@@ -225,15 +225,22 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=300)
     ap.add_argument("--out", default="runs/patchtune-grpo")
     ap.add_argument("--smoke", action="store_true", help="5 steps only")
+    ap.add_argument(
+        "--push-to",
+        default=None,
+        help="HF model repo id (e.g. Tashfiq99/patchtune-mini-grpo) to upload "
+        "the trained adapter to, using the ambient HF_TOKEN. Needed on HF "
+        "Jobs, where the local disk disappears when the job ends.",
+    )
     args = ap.parse_args()
     if args.smoke:
         args.steps = 5
 
+    out = None
     if args.path in ("auto", "agenttune"):
         try:
             out = train_agenttune(args)
             print(f"PATH A (AgentTune) done -> {out}")
-            return
         except Exception as exc:  # noqa: BLE001 - deliberate fallback
             print(f"PATH A (AgentTune) unavailable/failed: {type(exc).__name__}: {exc}")
             if args.path == "agenttune":
@@ -250,8 +257,20 @@ def main() -> None:
                 torch.cuda.empty_cache()
             except Exception:  # noqa: BLE001
                 pass
-    out = train_trl(args)
-    print(f"PATH B (TRL) done -> {out}")
+    if out is None:
+        out = train_trl(args)
+        print(f"PATH B (TRL) done -> {out}")
+
+    if args.push_to:
+        try:
+            from huggingface_hub import HfApi
+
+            api = HfApi()
+            api.create_repo(args.push_to, repo_type="model", exist_ok=True)
+            api.upload_folder(folder_path=out, repo_id=args.push_to, repo_type="model")
+            print(f"Pushed adapter -> https://huggingface.co/{args.push_to}")
+        except Exception as exc:  # noqa: BLE001 - report, never mask
+            print(f"PUSH FAILED ({type(exc).__name__}: {exc}) — adapter only at {out}")
 
 
 if __name__ == "__main__":
