@@ -82,6 +82,20 @@ def _resolve_resume(args) -> str | None:
     return str(ckpts[-1])
 
 
+def _model_init_kwargs(args) -> dict:
+    """Shared model-loading kwargs. --load-in-4bit shrinks the frozen
+    base from ~6.7 GB (bf16) to ~2 GB: on a 14.5 GB T4 the bf16 base
+    plus GRPO's full-vocab (262k) logits left no room and both paths
+    OOM'd even at batch 2 / group 2 (Nov 14 Colab smoke)."""
+    kw = {"torch_dtype": "bfloat16", "device_map": {"": "cuda"}}
+    if args.load_in_4bit:
+        kw["quantization_config"] = {
+            "load_in_4bit": True,
+            "bnb_4bit_compute_dtype": "bfloat16",
+        }
+    return kw
+
+
 def load_prompts(data_dir: str) -> list[dict]:
     rows = []
     for line in Path(data_dir, "train.jsonl").read_text(encoding="utf-8").splitlines():
@@ -160,16 +174,13 @@ def train_agenttune(args) -> str:
             "task_type": "CAUSAL_LM",
             "target_modules": "all-linear",
         },
-        model_init_kwargs={
-            "torch_dtype": "bfloat16",
-            "device_map": {"": "cuda"},
-        },
+        model_init_kwargs=_model_init_kwargs(args),
         bf16=True,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         per_device_train_batch_size=args.batch,
         num_generations=args.num_generations,
-        max_completion_length=512,
+        max_completion_length=args.max_completion,
         learning_rate=5e-5,
         # Rollout caps (agenttune backend kwargs, read via _get):
         # a trajectory defaults to max_steps_per_turn=20 turns, run
@@ -232,11 +243,11 @@ def train_trl(args) -> str:
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         max_prompt_length=1024,
-        max_completion_length=512,
+        max_completion_length=args.max_completion,
         # Pin every parameter to the GPU: without device_map, the
         # Nov 14 aligned-env run left weights on meta/CPU/disk offload
         # and accelerate died with "Cannot copy out of meta tensor".
-        model_init_kwargs={"torch_dtype": "bfloat16", "device_map": {"": "cuda"}},
+        model_init_kwargs=_model_init_kwargs(args),
     )
     while True:
         try:
@@ -304,6 +315,20 @@ def main() -> None:
         default=6,
         help="AgentTune PATH A only: max tool turns per trajectory "
         "(backend default is 20 — far too slow; canonical task = 4).",
+    )
+    ap.add_argument(
+        "--max-completion",
+        type=int,
+        default=512,
+        help="Max completion tokens per generation. 256 halves the "
+        "logits memory on small GPUs.",
+    )
+    ap.add_argument(
+        "--load-in-4bit",
+        action="store_true",
+        help="Load the frozen base in 4-bit (bitsandbytes). Frees "
+        "~4.7 GB vs bf16 — the lever that lets a 16 GB T4 hold the "
+        "base plus GRPO's full-vocab logits.",
     )
     ap.add_argument(
         "--push-to",
