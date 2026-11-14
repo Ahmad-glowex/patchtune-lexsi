@@ -171,6 +171,15 @@ def train_agenttune(args) -> str:
         num_generations=4,
         max_completion_length=512,
         learning_rate=5e-5,
+        # Rollout caps (agenttune backend kwargs, read via _get):
+        # a trajectory defaults to max_steps_per_turn=20 turns, run
+        # synchronously with a growing context — the Nov 14 L40S smoke
+        # job sat in step 1 for 18+ minutes without finishing a single
+        # step. Our canonical trajectory is exactly 4 tool calls, so
+        # 6 turns is ample slack; 256 new tokens per turn is the
+        # backend's own default, set here explicitly.
+        max_steps_per_turn=6,
+        max_new_tokens=256,
         **_save_kwargs(args),
     )
     if args.resume_ckpt:
