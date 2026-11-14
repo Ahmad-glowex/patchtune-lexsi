@@ -33,7 +33,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+
+# agenttune hard-depends on wandb and its trainer prompts interactively
+# for a W&B login in Colab, which blocks the run. Disable it outright;
+# PATH B also passes report_to=[].
+os.environ.setdefault("WANDB_DISABLED", "true")
+os.environ.setdefault("WANDB_MODE", "disabled")
 
 BASE_MODEL = "CohereLabs/tiny-aya-global"
 
@@ -103,6 +110,7 @@ def train_agenttune(args) -> str:
         train_dataset=Dataset.from_list(load_prompts(args.data_dir)),
         max_steps=args.steps,
         output_dir=args.out,
+        report_to=[],
     )
     trainer.train()
     trainer.save_model(args.out)
@@ -125,7 +133,14 @@ def train_trl(args) -> str:
     # model does not fit a free T4 (15 GB) once AdamW states are counted;
     # the first smoke attempt thrashed on CPU/disk offload. LoRA keeps
     # the trainable state small and the base frozen in bf16.
-    config = GRPOConfig(
+    #
+    # The config is built defensively: TRL renamed/removed GRPOConfig
+    # fields across versions (a hard TypeError on 'max_prompt_length'
+    # killed the Nov 14 fresh-env attempt), so drop any kwarg the
+    # installed GRPOConfig rejects and retry.
+    import re
+
+    config_kwargs = dict(
         output_dir=args.out,
         max_steps=args.steps,
         per_device_train_batch_size=4,
@@ -141,6 +156,16 @@ def train_trl(args) -> str:
         max_completion_length=512,
         model_init_kwargs={"torch_dtype": "bfloat16"},
     )
+    while True:
+        try:
+            config = GRPOConfig(**config_kwargs)
+            break
+        except TypeError as exc:
+            m = re.search(r"unexpected keyword argument '([A-Za-z_]+)'", str(exc))
+            if not m or m.group(1) not in config_kwargs:
+                raise
+            print(f"GRPOConfig: dropping unsupported kwarg {m.group(1)!r}")
+            del config_kwargs[m.group(1)]
     peft_config = LoraConfig(
         r=16,
         lora_alpha=32,
