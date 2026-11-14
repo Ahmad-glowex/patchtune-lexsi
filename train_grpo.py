@@ -102,6 +102,11 @@ def train_agenttune(args) -> str:
 
     from patchtune.reward import reward_func
 
+    # Memory levers (agenttune 1.1.6's TRL backend routes kwargs by
+    # introspection and accepts peft_config as a dict): LoRA + bf16 +
+    # everything pinned to the single GPU. Without these, PATH A tried
+    # full fine-tuning with disk offload and OOM'd the 14.5 GB T4
+    # (Nov 14 aligned-env run).
     trainer = create_agentic_trainer(
         algorithm="grpo",
         model=args.model,
@@ -111,6 +116,24 @@ def train_agenttune(args) -> str:
         max_steps=args.steps,
         output_dir=args.out,
         report_to=[],
+        peft_config={
+            "r": 16,
+            "lora_alpha": 32,
+            "lora_dropout": 0.0,
+            "task_type": "CAUSAL_LM",
+            "target_modules": "all-linear",
+        },
+        model_init_kwargs={
+            "torch_dtype": "bfloat16",
+            "device_map": {"": "cuda"},
+        },
+        bf16=True,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        per_device_train_batch_size=4,
+        num_generations=4,
+        max_completion_length=512,
+        learning_rate=5e-5,
     )
     trainer.train()
     trainer.save_model(args.out)
@@ -154,7 +177,10 @@ def train_trl(args) -> str:
         gradient_checkpointing_kwargs={"use_reentrant": False},
         max_prompt_length=1024,
         max_completion_length=512,
-        model_init_kwargs={"torch_dtype": "bfloat16"},
+        # Pin every parameter to the GPU: without device_map, the
+        # Nov 14 aligned-env run left weights on meta/CPU/disk offload
+        # and accelerate died with "Cannot copy out of meta tensor".
+        model_init_kwargs={"torch_dtype": "bfloat16", "device_map": {"": "cuda"}},
     )
     while True:
         try:
