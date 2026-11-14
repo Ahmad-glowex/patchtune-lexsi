@@ -167,8 +167,8 @@ def train_agenttune(args) -> str:
         bf16=True,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        per_device_train_batch_size=4,
-        num_generations=4,
+        per_device_train_batch_size=args.batch,
+        num_generations=args.num_generations,
         max_completion_length=512,
         learning_rate=5e-5,
         # Rollout caps (agenttune backend kwargs, read via _get):
@@ -178,7 +178,7 @@ def train_agenttune(args) -> str:
         # step. Our canonical trajectory is exactly 4 tool calls, so
         # 6 turns is ample slack; 256 new tokens per turn is the
         # backend's own default, set here explicitly.
-        max_steps_per_turn=6,
+        max_steps_per_turn=args.max_steps_per_turn,
         max_new_tokens=256,
         **_save_kwargs(args),
     )
@@ -222,8 +222,8 @@ def train_trl(args) -> str:
     config_kwargs = dict(
         output_dir=args.out,
         max_steps=args.steps,
-        per_device_train_batch_size=4,
-        num_generations=4,
+        per_device_train_batch_size=args.batch,
+        num_generations=args.num_generations,
         learning_rate=5e-5,  # LoRA-scale rate (full-FT would use ~1e-5)
         logging_steps=1,
         report_to=[],
@@ -284,6 +284,27 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=300)
     ap.add_argument("--out", default="runs/patchtune-grpo")
     ap.add_argument("--smoke", action="store_true", help="5 steps only")
+    ap.add_argument(
+        "--batch",
+        type=int,
+        default=4,
+        help="Prompts per training step. Use 2 on a 16 GB T4: the "
+        "scoring phase materialises full-vocab logits and OOMs at 4.",
+    )
+    ap.add_argument(
+        "--num-generations",
+        type=int,
+        default=4,
+        help="GRPO group size (completions per prompt). 2 is the "
+        "minimum valid group; use it on small GPUs.",
+    )
+    ap.add_argument(
+        "--max-steps-per-turn",
+        type=int,
+        default=6,
+        help="AgentTune PATH A only: max tool turns per trajectory "
+        "(backend default is 20 — far too slow; canonical task = 4).",
+    )
     ap.add_argument(
         "--push-to",
         default=None,
