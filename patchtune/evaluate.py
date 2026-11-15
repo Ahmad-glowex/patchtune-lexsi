@@ -51,7 +51,15 @@ CLI:
     python -m patchtune.evaluate --model hf --data data/heldout.jsonl
     python -m patchtune.evaluate --model hf --adapter runs/grpo-full \
         --data data/heldout.jsonl --out results/eval_hf_tuned.json
-Writes a JSON summary (and prints it).
+    python -m patchtune.evaluate --model hf --adapter runs/grpo-full \
+        --offset 38 --limit 12 --out results/eval_hf_tuned_tail.json
+Writes a JSON summary (and prints it). Long runs are crash-safe: the
+output file is rewritten after every task with the rows collected so
+far plus ``"partial": true`` (the final write drops the flag, same
+schema as always), and one progress line is printed per task.
+``--offset``/``--limit`` select the task slice [offset, offset+limit)
+so a killed run's missing tail can be re-run on its own and the chunk
+files merged by task id.
 """
 
 from __future__ import annotations
@@ -233,7 +241,37 @@ class HFModel:  # pragma: no cover - requires GPU/transformers (Colab)
 # Harness
 # ---------------------------------------------------------------------------
 
-def evaluate_model(model, tasks: list[dict]) -> dict:
+def _summarize(rows: list[dict]) -> dict:
+    """The four before/after metrics over the given per-task rows."""
+    n = max(1, len(rows))
+    total_calls = sum(r["calls"] for r in rows)
+    return {
+        "tasks": len(rows),
+        "task_success_rate": round(sum(r["success"] for r in rows) / n, 4),
+        "tool_call_accuracy": round(sum(r["matched"] for r in rows) / max(1, total_calls), 4),
+        "avg_calls_per_task": round(total_calls / n, 3),
+        "malformed_rate": round(sum(r["malformed"] for r in rows) / max(1, total_calls), 4),
+        "per_task": rows,
+    }
+
+
+def select_tasks(tasks: list[dict], offset: int = 0, limit: int = 0) -> list[dict]:
+    """The [offset, offset+limit) slice of ``tasks`` (limit 0 = to the end)."""
+    if offset:
+        tasks = tasks[offset:]
+    if limit:
+        tasks = tasks[:limit]
+    return tasks
+
+
+def evaluate_model(model, tasks: list[dict], on_task=None) -> dict:
+    """Run ``model`` over ``tasks`` and return the summary dict.
+
+    ``on_task(row, rows)``, when given, is called after each task with
+    the row just produced and the list of all rows so far — the CLI
+    uses it to print progress and rewrite the output file after every
+    task, so a killed run loses no completed task.
+    """
     rows = []
     for task in tasks:
         with tempfile.TemporaryDirectory(prefix="patchtune-eval-") as tmp:
@@ -266,23 +304,17 @@ def evaluate_model(model, tasks: list[dict]) -> dict:
                     executor.dispatch(c)
             final = executor.run_tests()
             matched = len(match_expected(calls, task["expected_calls"]))
-            rows.append({
+            row = {
                 "id": task["id"],
                 "success": bool(final.get("passed")),
                 "calls": len(calls),
                 "matched": matched,
                 "malformed": malformed,
-            })
-    n = max(1, len(rows))
-    total_calls = sum(r["calls"] for r in rows)
-    return {
-        "tasks": len(rows),
-        "task_success_rate": round(sum(r["success"] for r in rows) / n, 4),
-        "tool_call_accuracy": round(sum(r["matched"] for r in rows) / max(1, total_calls), 4),
-        "avg_calls_per_task": round(total_calls / n, 3),
-        "malformed_rate": round(sum(r["malformed"] for r in rows) / max(1, total_calls), 4),
-        "per_task": rows,
-    }
+            }
+            rows.append(row)
+            if on_task is not None:
+                on_task(row, rows)
+    return _summarize(rows)
 
 
 def main() -> None:
@@ -291,6 +323,10 @@ def main() -> None:
     ap.add_argument("--tasks", "--data", dest="tasks", default="data/heldout.jsonl")
     ap.add_argument("--limit", "--max-tasks", dest="limit", type=int, default=0,
                     help="0 = all tasks")
+    ap.add_argument("--offset", type=int, default=0,
+                    help="skip the first N tasks; with --limit, evaluates "
+                         "tasks [offset, offset+limit) — for chunked runs "
+                         "and re-running only a killed eval's missing tail")
     ap.add_argument("--out", default="")
     ap.add_argument("--adapter", default="",
                     help="hf only: LoRA adapter path or Hub repo id "
@@ -307,9 +343,8 @@ def main() -> None:
                          "as in training; --no-load-in-4bit on bigger GPUs")
     args = ap.parse_args()
 
-    tasks = load_jsonl(args.tasks)
-    if args.limit:
-        tasks = tasks[:args.limit]
+    tasks = select_tasks(load_jsonl(args.tasks),
+                         offset=args.offset, limit=args.limit)
     if args.model == "hf":
         model = HFModel(args.model_id, args.adapter or None,
                         max_turns=args.max_turns,
@@ -319,16 +354,32 @@ def main() -> None:
     else:
         model = MockAgentModel("base" if args.model == "mock-base" else "tuned")
         label = args.model
-    summary = evaluate_model(model, tasks)
-    summary["model"] = label
-    summary["tasks_file"] = args.tasks
-    if args.model == "hf":
-        summary["model_id"] = args.model_id
-        summary["adapter"] = args.adapter or None
-    print(json.dumps({k: v for k, v in summary.items() if k != "per_task"}, indent=2))
     out = args.out or f"results/eval_{label.replace('-', '_')}.json"
-    Path(out).parent.mkdir(parents=True, exist_ok=True)
-    Path(out).write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    meta = {"model": label, "tasks_file": args.tasks}
+    if args.model == "hf":
+        meta["model_id"] = args.model_id
+        meta["adapter"] = args.adapter or None
+
+    def on_task(row, rows):
+        # Progress line + crash-safe partial write after every task:
+        # if the process dies here, the file on disk already holds
+        # every completed task's row (flagged "partial": true).
+        done = len(rows)
+        rate = sum(r["success"] for r in rows) / done
+        print(f"[{args.offset + done}/{args.offset + len(tasks)}] "
+              f"{row['id']} success={row['success']} "
+              f"running_success_rate={rate:.3f}", flush=True)
+        partial = _summarize(rows)
+        partial.update(meta)
+        partial["partial"] = True
+        out_path.write_text(json.dumps(partial, indent=2), encoding="utf-8")
+
+    summary = evaluate_model(model, tasks, on_task=on_task)
+    summary.update(meta)
+    print(json.dumps({k: v for k, v in summary.items() if k != "per_task"}, indent=2))
+    out_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"wrote {out}")
 
 

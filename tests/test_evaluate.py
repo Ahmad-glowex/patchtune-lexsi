@@ -6,6 +6,7 @@ from patchtune.evaluate import (
     evaluate_model,
     first_call_from_text,
     run_interactive_rollout,
+    select_tasks,
 )
 from patchtune.tasks import build_dataset
 
@@ -119,6 +120,44 @@ class TestInteractiveRollout(unittest.TestCase):
         for row in summary["per_task"]:
             self.assertEqual(row["calls"], 3)
             self.assertFalse(row["success"])
+
+
+class TestSelectTasks(unittest.TestCase):
+    def test_offset_and_limit_give_half_open_slice(self):
+        tasks = [{"id": f"t{i}"} for i in range(50)]
+        chunk = select_tasks(tasks, offset=38, limit=12)
+        self.assertEqual([t["id"] for t in chunk],
+                         [f"t{i}" for i in range(38, 50)])
+
+    def test_defaults_and_single_sided(self):
+        tasks = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+        self.assertEqual(select_tasks(tasks), tasks)
+        self.assertEqual(select_tasks(tasks, offset=1), tasks[1:])
+        self.assertEqual(select_tasks(tasks, limit=2), tasks[:2])
+        self.assertEqual(select_tasks(tasks, offset=5), [])
+
+
+class TestIncrementalCallback(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tasks = build_dataset(n_train=0, n_heldout=8, seed=5)["heldout"]
+
+    def test_on_task_fires_per_task_with_growing_rows(self):
+        seen = []
+        summary = evaluate_model(
+            MockAgentModel("tuned"), self.tasks,
+            on_task=lambda row, rows: seen.append((row["id"], len(rows))))
+        self.assertEqual([n for _, n in seen],
+                         list(range(1, len(self.tasks) + 1)))
+        self.assertEqual([tid for tid, _ in seen],
+                         [t["id"] for t in self.tasks])
+        self.assertEqual(len(summary["per_task"]), len(self.tasks))
+
+    def test_callback_does_not_change_summary(self):
+        plain = evaluate_model(MockAgentModel("tuned"), self.tasks)
+        with_cb = evaluate_model(MockAgentModel("tuned"), self.tasks,
+                                 on_task=lambda row, rows: None)
+        self.assertEqual(plain, with_cb)
 
 
 if __name__ == "__main__":
