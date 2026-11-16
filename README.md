@@ -1,3 +1,5 @@
+Read the full submission write-up: [ARTICLE.md](ARTICLE.md)
+
 # PatchTune-mini
 
 **Post-train CohereLabs/tiny-aya-global with GRPO so a coding agent makes
